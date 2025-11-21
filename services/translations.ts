@@ -28,7 +28,12 @@ export const translations = {
     fileSizeLimit: "File size exceeds the 2GB limit.",
     validFileErr: "Please upload a valid video file.",
     youtubeErr: "YouTube links are not supported directly. Please upload a file.",
-    failedToFetch: "Failed to fetch video."
+    failedToFetch: "Failed to fetch video.",
+    apiKeyTitle: "API Key Setup",
+    apiKeyDesc: "Enter your Gemini API key to activate the neural engine.",
+    apiKeyPlaceholder: "Paste your API Key here...",
+    saveBtn: "Initialize System",
+    settings: "Settings"
   },
   am: {
     appTitle: "የቪዲዮ ማጠቃለያ AI",
@@ -57,7 +62,12 @@ export const translations = {
     fileSizeLimit: "የፋይሉ መጠን ከ2GB በላይ ነው።",
     validFileErr: "እባክዎ ትክክለኛ የቪዲዮ ፋይል ይጫኑ።",
     youtubeErr: "የYouTube ሊንኮች በቀጥታ አይደገፉም። እባክዎ ፋይል ይጫኑ።",
-    failedToFetch: "ቪዲዮውን ማምጣት አልተቻለም።"
+    failedToFetch: "ቪዲዮውን ማምጣት አልተቻለም።",
+    apiKeyTitle: "የኤፒአይ ቁልፍ ማስተካከያ",
+    apiKeyDesc: "ሲስተሙን ለማስጀመር የGemini API ቁልፍ ያስገቡ።",
+    apiKeyPlaceholder: "ቁልፉን እዚህ ይለጥፉ...",
+    saveBtn: "ሲስተሙን አስጀምር",
+    settings: "ቅንብሮች"
   }
 };
 

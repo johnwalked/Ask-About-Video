@@ -1,21 +1,30 @@
 import { GoogleGenAI, Chat, Modality, GenerateContentResponse, LiveServerMessage } from "@google/genai";
 import { Language } from "../types";
 
-const apiKey = process.env.API_KEY;
+// API Key Management
+let runtimeKey: string | null = null;
 
-// Initialize the Gemini API client
-// We lazily initialize or handle the missing key in the functions to prevent immediate crash
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+export const setRuntimeApiKey = (key: string) => {
+  runtimeKey = key;
+};
+
+const getAiClient = () => {
+  // Prioritize the runtime key (set via UI), fallback to build-time env var
+  const key = runtimeKey || process.env.API_KEY;
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
+};
 
 // Type definition for the Live Session since it's not exported directly from the SDK
-type GenAILiveSession = Awaited<ReturnType<typeof ai.live.connect>>;
+type GenAILiveSession = Awaited<ReturnType<GoogleGenAI['live']['connect']>>;
 
 /**
  * Analyzes a video using the Gemini 3 Pro model.
  */
 export const analyzeVideo = async (base64Data: string, mimeType: string, language: Language = 'en'): Promise<string> => {
+  const ai = getAiClient();
   if (!ai) {
-    throw new Error("API Key is missing. Please check your deployment settings.");
+    throw new Error("API Key is missing. Please enter it in settings.");
   }
 
   const modelId = 'gemini-3-pro-preview'; 
@@ -102,6 +111,7 @@ export const analyzeVideo = async (base64Data: string, mimeType: string, languag
  * Creates a chat session initialized with the video context.
  */
 export const createChatSession = async (base64Data: string, mimeType: string, language: Language = 'en'): Promise<Chat> => {
+  const ai = getAiClient();
   if (!ai) throw new Error("API Key missing");
 
   const modelId = 'gemini-3-pro-preview';
@@ -211,6 +221,7 @@ function base64EncodeAudio(float32Array: Float32Array): string {
  * Synthesizes speech from text using Gemini TTS.
  */
 export const synthesizeSpeech = async (text: string, voiceName: string = 'Puck'): Promise<AudioBuffer> => {
+  const ai = getAiClient();
   if (!ai) throw new Error("API Key missing");
   try {
     const response = await ai.models.generateContent({
@@ -263,6 +274,7 @@ export class LiveSession {
   private language: Language;
 
   constructor(voiceName: string, contextText: string, language: Language = 'en') {
+    const ai = getAiClient();
     if (!ai) throw new Error("API Key missing");
     
     this.voiceName = voiceName;

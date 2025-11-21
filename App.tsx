@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoInput } from './components/VideoInput';
 import { VideoFile, SummaryState, ChatMessage, AVAILABLE_VOICES, Language } from './types';
-import { analyzeVideo, createChatSession, sendChatMessageStream, synthesizeSpeech, LiveSession } from './services/geminiService';
+import { analyzeVideo, createChatSession, sendChatMessageStream, synthesizeSpeech, LiveSession, setRuntimeApiKey } from './services/geminiService';
 import { fileToBase64, downloadTextFile } from './services/utils';
 import { getTranslation } from './services/translations';
 import { 
@@ -22,7 +22,9 @@ import {
   Radio,
   Power,
   Waves,
-  Globe
+  Globe,
+  Settings,
+  Key
 } from 'lucide-react';
 import { Chat } from '@google/genai';
 
@@ -41,6 +43,11 @@ export default function App() {
   // Layout State
   const [activeTab, setActiveTab] = useState<'summary' | 'chat'>('summary');
 
+  // API Key Management State
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [isApiKeySet, setIsApiKeySet] = useState(false);
+
   // Chat State
   const [chatSession, setChatSession] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -58,6 +65,33 @@ export default function App() {
   const [isLiveMode, setIsLiveMode] = useState(false);
   const liveSessionRef = useRef<LiveSession | null>(null);
 
+  // Initialize API Key from env or local storage
+  useEffect(() => {
+    const envKey = process.env.API_KEY;
+    const storedKey = localStorage.getItem('gemini_api_key');
+    
+    if (envKey) {
+      console.log("Using Environment API Key");
+      setIsApiKeySet(true);
+    } else if (storedKey) {
+      console.log("Using Stored API Key");
+      setRuntimeApiKey(storedKey);
+      setApiKey(storedKey);
+      setIsApiKeySet(true);
+    } else {
+      setShowSettings(true);
+    }
+  }, []);
+
+  const handleSaveApiKey = () => {
+    if (apiKey.trim()) {
+      setRuntimeApiKey(apiKey.trim());
+      localStorage.setItem('gemini_api_key', apiKey.trim());
+      setIsApiKeySet(true);
+      setShowSettings(false);
+    }
+  };
+
   const handleVideoSelected = (selectedVideo: VideoFile) => {
     setVideo(selectedVideo);
     setSummary({ isLoading: false, text: null, error: null });
@@ -70,26 +104,27 @@ export default function App() {
   const handleAnalyze = async () => {
     if (!video || !video.file) return;
 
+    // Double check key
+    if (!isApiKeySet) {
+      setShowSettings(true);
+      return;
+    }
+
     setSummary({ isLoading: true, text: null, error: null });
     console.log("Starting processing for file:", video.name);
 
     try {
-      // 1. Check API Key presence in UI (Optional debug)
-      if (!process.env.API_KEY) {
-         throw new Error("System Configuration Error: API Key is missing from the deployment.");
-      }
-
-      // 2. Convert File
+      // 1. Convert File
       const base64Data = await fileToBase64(video.file);
       console.log("File converted to Base64. Size:", base64Data.length);
       
-      // 3. Run Analysis
+      // 2. Run Analysis
       const text = await analyzeVideo(base64Data, video.type, language);
       
       setSummary({ isLoading: false, text, error: null });
       setActiveTab('summary');
 
-      // 4. Initialize Chat Session
+      // 3. Initialize Chat Session
       try {
         const session = await createChatSession(base64Data, video.type, language);
         setChatSession(session);
@@ -256,7 +291,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen font-sans selection:bg-brand-500/30 pb-4 text-slate-100 overflow-x-hidden bg-black">
+    <div className="min-h-screen font-sans selection:bg-brand-500/30 pb-4 text-slate-100 overflow-x-hidden bg-black relative">
       
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-40 glass-panel border-b-0 border-b-white/5 h-14 lg:h-16">
@@ -278,6 +313,13 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             <button 
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-full hover:bg-white/10 transition-colors text-slate-400 hover:text-white"
+              title={t.settings}
+            >
+               <Settings className="w-4 h-4" />
+            </button>
+            <button 
               onClick={toggleLanguage}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-all text-xs font-medium text-slate-300"
             >
@@ -290,6 +332,49 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-[#0f172a] border border-white/10 p-6 rounded-2xl shadow-2xl max-w-md w-full mx-4 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-brand-500 to-purple-500"></div>
+            <div className="flex items-start gap-4 mb-6">
+               <div className="p-3 bg-brand-500/10 rounded-xl border border-brand-500/20">
+                 <Key className="w-6 h-6 text-brand-400" />
+               </div>
+               <div>
+                 <h3 className="text-lg font-bold text-white">{t.apiKeyTitle}</h3>
+                 <p className="text-xs text-slate-400 mt-1">{t.apiKeyDesc}</p>
+               </div>
+            </div>
+            
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={t.apiKeyPlaceholder}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-brand-500/50 mb-6"
+            />
+            
+            <div className="flex justify-end gap-3">
+              {isApiKeySet && (
+                 <button 
+                   onClick={() => setShowSettings(false)}
+                   className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                 >
+                   Close
+                 </button>
+              )}
+              <button
+                onClick={handleSaveApiKey}
+                className="px-6 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all shadow-lg shadow-brand-500/20"
+              >
+                {t.saveBtn}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 pt-20 pb-6 relative z-0">
         
