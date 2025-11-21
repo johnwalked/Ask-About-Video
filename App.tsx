@@ -71,16 +71,25 @@ export default function App() {
     if (!video || !video.file) return;
 
     setSummary({ isLoading: true, text: null, error: null });
+    console.log("Starting processing for file:", video.name);
 
     try {
-      const base64Data = await fileToBase64(video.file);
-      
-      // Run Analysis with selected language
-      const text = await analyzeVideo(base64Data, video.type, language);
-      setSummary({ isLoading: false, text, error: null });
-      setActiveTab('summary'); // Switch to summary tab on success
+      // 1. Check API Key presence in UI (Optional debug)
+      if (!process.env.API_KEY) {
+         throw new Error("System Configuration Error: API Key is missing from the deployment.");
+      }
 
-      // Initialize Chat Session silently
+      // 2. Convert File
+      const base64Data = await fileToBase64(video.file);
+      console.log("File converted to Base64. Size:", base64Data.length);
+      
+      // 3. Run Analysis
+      const text = await analyzeVideo(base64Data, video.type, language);
+      
+      setSummary({ isLoading: false, text, error: null });
+      setActiveTab('summary');
+
+      // 4. Initialize Chat Session
       try {
         const session = await createChatSession(base64Data, video.type, language);
         setChatSession(session);
@@ -91,14 +100,15 @@ export default function App() {
           timestamp: Date.now()
         }]);
       } catch (chatErr) {
-        console.error("Failed to init chat", chatErr);
+        console.warn("Chat initialization warning:", chatErr);
       }
 
     } catch (error: any) {
+      console.error("Analysis workflow failed:", error);
       setSummary({
         isLoading: false,
         text: null,
-        error: error.message || "Failed to analyze video"
+        error: error.message || "Failed to analyze video. Please try a smaller file or check your connection."
       });
     }
   };
@@ -143,9 +153,7 @@ export default function App() {
   };
 
   const playResponse = async (text: string) => {
-    // Don't play TTS if Live Mode is active
     if (isLiveMode) return;
-
     stopChatAudio();
     setIsPlayingAudio(true);
     try {
@@ -203,9 +211,6 @@ export default function App() {
            msg.id === responseId ? { ...msg, text: fullResponseText } : msg
          ));
       }
-      // Optional: Auto-read chat response? Disabled for now to avoid annoyance
-      // if (fullResponseText) playResponse(fullResponseText);
-
     } catch (err) {
       console.error(err);
       setMessages(prev => prev.map(msg => 
@@ -228,7 +233,7 @@ export default function App() {
   const startLiveMode = () => {
     if (!summary.text) return;
     stopChatAudio();
-    setActiveTab('chat'); // Ensure we are on the chat tab to see the overlay
+    setActiveTab('chat');
     setIsLiveMode(true);
     try {
       liveSessionRef.current = new LiveSession(selectedVoice, summary.text, language);
@@ -337,6 +342,17 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {/* Error Display */}
+                {summary.error && (
+                    <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-200 text-xs flex items-start gap-3 animate-in shake">
+                        <Activity className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                            <p className="font-bold mb-1">Analysis Failed</p>
+                            <p>{summary.error}</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Analyze Control */}
                 <button

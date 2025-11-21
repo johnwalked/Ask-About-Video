@@ -1,8 +1,11 @@
 import { GoogleGenAI, Chat, Modality, GenerateContentResponse, LiveServerMessage } from "@google/genai";
 import { Language } from "../types";
 
+const apiKey = process.env.API_KEY;
+
 // Initialize the Gemini API client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// We lazily initialize or handle the missing key in the functions to prevent immediate crash
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 // Type definition for the Live Session since it's not exported directly from the SDK
 type GenAILiveSession = Awaited<ReturnType<typeof ai.live.connect>>;
@@ -11,75 +14,96 @@ type GenAILiveSession = Awaited<ReturnType<typeof ai.live.connect>>;
  * Analyzes a video using the Gemini 3 Pro model.
  */
 export const analyzeVideo = async (base64Data: string, mimeType: string, language: Language = 'en'): Promise<string> => {
+  if (!ai) {
+    throw new Error("API Key is missing. Please check your deployment settings.");
+  }
+
+  const modelId = 'gemini-3-pro-preview'; 
+  const finalMimeType = mimeType || 'video/mp4';
+
+  const langInstruction = language === 'am' 
+    ? "Provide the output strictly in Amharic language." 
+    : "Provide the output in English.";
+
+  const prompt = `Analyze this video content. ${langInstruction}`;
+
+  // Common config
+  const systemInstruction = `You are an expert video analyst. 
+    Analyze the provided video content and generate a very clear, short, and optimized summary.
+    
+    Format your response strictly as follows (Translate headers if in Amharic):
+
+    ### 🎯 Executive Summary
+    [A single, powerful sentence describing the video's core message]
+
+    ### 🔑 Key Highlights
+    * [Key point 1]
+    * [Key point 2]
+    * [Key point 3]
+
+    ### 💡 Takeaway
+    [A brief concluding insight]
+    
+    Keep the tone professional, clear, and objective. ${langInstruction}`;
+
   try {
-    const modelId = 'gemini-3-pro-preview'; 
-    const finalMimeType = mimeType || 'video/mp4';
-
-    const langInstruction = language === 'am' 
-      ? "Provide the output strictly in Amharic language." 
-      : "Provide the output in English.";
-
+    // Attempt 1: With Thinking Mode
+    console.log("Starting analysis with Thinking Mode...");
     const response = await ai.models.generateContent({
       model: modelId,
       contents: [
         {
           parts: [
-            {
-              inlineData: {
-                mimeType: finalMimeType,
-                data: base64Data
-              }
-            },
-            {
-              text: `Analyze this video content. ${langInstruction}`
-            }
+            { inlineData: { mimeType: finalMimeType, data: base64Data } },
+            { text: prompt }
           ]
         }
       ],
       config: {
         temperature: 0.2,
-        // Thinking mode configuration for deep analysis
-        thinkingConfig: { thinkingBudget: 32768 }, 
-        systemInstruction: `You are an expert video analyst. 
-        Analyze the provided video content and generate a very clear, short, and optimized summary.
-        
-        Format your response strictly as follows (Translate headers if in Amharic):
-
-        ### 🎯 Executive Summary
-        [A single, powerful sentence describing the video's core message]
-
-        ### 🔑 Key Highlights
-        * [Key point 1]
-        * [Key point 2]
-        * [Key point 3]
-
-        ### 💡 Takeaway
-        [A brief concluding insight]
-        
-        Keep the tone professional, clear, and objective. ${langInstruction}`
+        thinkingConfig: { thinkingBudget: 1024 }, // Reduced budget to prevent timeouts on large contexts
+        systemInstruction: systemInstruction
       }
     });
 
-    if (response.text) {
-      return response.text;
-    }
-    
-    if (response.candidates?.[0]?.finishReason) {
-        console.warn("Analysis stopped. Reason:", response.candidates[0].finishReason);
-        return `Analysis stopped. Reason: ${response.candidates[0].finishReason}`;
-    }
-
-    return "No summary generated.";
+    if (response.text) return response.text;
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    throw new Error(error.message || "Failed to analyze video.");
+    console.warn("Thinking mode analysis failed, retrying with standard config...", error);
+    
+    // Attempt 2: Fallback without Thinking Mode (Standard)
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash', // Fallback to a faster model if Pro fails
+            contents: [
+              {
+                parts: [
+                  { inlineData: { mimeType: finalMimeType, data: base64Data } },
+                  { text: prompt }
+                ]
+              }
+            ],
+            config: {
+              temperature: 0.2,
+              systemInstruction: systemInstruction
+            }
+          });
+      
+          if (response.text) return response.text;
+    } catch (retryError: any) {
+        console.error("Retry failed:", retryError);
+        throw new Error(`Analysis failed: ${retryError.message}`);
+    }
   }
+
+  return "No summary generated.";
 };
 
 /**
  * Creates a chat session initialized with the video context.
  */
 export const createChatSession = async (base64Data: string, mimeType: string, language: Language = 'en'): Promise<Chat> => {
+  if (!ai) throw new Error("API Key missing");
+
   const modelId = 'gemini-3-pro-preview';
   
   const langInstruction = language === 'am' 
@@ -187,6 +211,7 @@ function base64EncodeAudio(float32Array: Float32Array): string {
  * Synthesizes speech from text using Gemini TTS.
  */
 export const synthesizeSpeech = async (text: string, voiceName: string = 'Puck'): Promise<AudioBuffer> => {
+  if (!ai) throw new Error("API Key missing");
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
@@ -238,6 +263,8 @@ export class LiveSession {
   private language: Language;
 
   constructor(voiceName: string, contextText: string, language: Language = 'en') {
+    if (!ai) throw new Error("API Key missing");
+    
     this.voiceName = voiceName;
     this.contextText = contextText;
     this.language = language;
@@ -342,10 +369,5 @@ export class LiveSession {
     }
     await this.inputContext.close();
     await this.outputContext.close();
-    
-    // Close session
-    // Note: The SDK currently doesn't expose a clean .close() on the promise result directly in all versions, 
-    // but dropping references and stopping media stream usually suffices for client cleanup.
-    // Ideally: (await this.session).close(); if supported.
   }
 }
