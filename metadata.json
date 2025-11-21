@@ -1,0 +1,7 @@
+{
+  "name": "Video Summary AI",
+  "description": "A modern web application powered by Gemini 3 Pro to analyze videos and generate concise, optimized summaries.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
